@@ -22,6 +22,7 @@
   </ItemGroup>
 
   <PropertyGroup>
+    <DaemonUrl>https://github.com/retoaccess1/haveno-reto/releases/download/1.2.2-reto-app</DaemonUrl>
     <Network>XMR_MAINNET</Network>
     <!-- Don't use the same name as the haveno desktop client! -->
     <HavenoAppName>haveno-reto-node</HavenoAppName>
