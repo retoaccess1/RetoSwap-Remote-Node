@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
@@ -18,7 +19,9 @@ public class DaemonService
 {
     private readonly string _os;
     private readonly string _daemonUrlFileName = "installed-daemon-url";
+    private readonly string _basePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppConstants.HavenoAppName);
     private readonly string _daemonPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppConstants.HavenoAppName, "daemon");
+    private readonly string _dataPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), AppConstants.HavenoAppName, "data");
 
     public DaemonService()
     {
@@ -139,13 +142,100 @@ public class DaemonService
         }
     }
 
+    private static void CopyDirectory(string sourceDirectory, string destinationDirectory, string[] exclude)
+    {
+        var sourceDirectoryInfo = new DirectoryInfo(sourceDirectory);
+        if (!sourceDirectoryInfo.Exists)
+            throw new DirectoryNotFoundException($"Source directory not found: {sourceDirectoryInfo.FullName}");
+
+        var subDirectories = sourceDirectoryInfo.GetDirectories();
+
+        Directory.CreateDirectory(destinationDirectory);
+
+        foreach (var fileInfo in sourceDirectoryInfo.GetFiles())
+        {
+            if (exclude.Contains(fileInfo.FullName))
+                continue;
+
+            string targetFilePath = Path.Combine(destinationDirectory, fileInfo.Name);
+            fileInfo.CopyTo(targetFilePath);
+        }
+
+        foreach (var subDirectoryInfo in subDirectories)
+        {
+            if (exclude.Contains(subDirectoryInfo.FullName))
+                continue;
+
+            string newDestinationDirectory = Path.Combine(destinationDirectory, subDirectoryInfo.Name);
+            CopyDirectory(subDirectoryInfo.FullName, newDestinationDirectory, exclude);
+        }
+    }
+
+    private static void ZipDirectory(string sourceDirectory, string zipPath, string[] exclude)
+    {
+        using var zip = ZipFile.Open(zipPath, ZipArchiveMode.Create);
+
+        var files = Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories);
+
+        foreach (var file in files)
+        {
+            if (exclude.Contains(file) || file == zipPath)
+                continue;
+
+            var entryName = Path.GetRelativePath(sourceDirectory, file);
+            zip.CreateEntryFromFile(file, entryName, CompressionLevel.Optimal);
+        }
+    }
+
     public async Task GetHavenoAsync()
     {
         Console.WriteLine("Checking Haveno installation");
 
-        // ?
         Directory.CreateDirectory(_daemonPath);
-        
+
+        // If previous copy failed for some reason
+        var tmpPath = Path.Combine(_basePath, "tmp");
+        if (Directory.Exists(tmpPath))
+            Directory.Delete(tmpPath, true);
+
+        // If backup has not been done and if there are files/dirs to backup 
+        if (!Directory.Exists(_dataPath) && (Directory.GetDirectories(_basePath).Length > 1))
+        {
+            Console.WriteLine("Moving Haveno user data to new directory...");
+
+            // Just in case
+            Console.WriteLine("Backing up...");
+            var zipPath = Path.Combine(_basePath, $"backup-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}.zip");
+            ZipDirectory(_basePath, zipPath, [ _daemonPath ]);
+            Console.WriteLine("Backup done");
+
+            Directory.CreateDirectory(tmpPath);
+
+            CopyDirectory(_basePath, tmpPath, [_daemonPath, _dataPath, tmpPath, zipPath ]);
+            Directory.Move(tmpPath, _dataPath);
+
+            // Remove 
+            var files = Directory.GetFiles(_basePath);
+            foreach (var file in files)
+            {
+                if (file == _daemonPath || file == _dataPath || file.Contains(".zip"))
+                    continue;
+
+                File.Delete(file);
+            }
+
+            var directories = Directory.GetDirectories(_basePath);
+            foreach (var directory in directories)
+            {
+                if (directory == _daemonPath || directory == _dataPath || directory.Contains(".zip"))
+                    continue;
+
+                Directory.Delete(directory, true);
+            }
+
+            Console.WriteLine("Done moving data");
+        }
+
         var currentIntalledDaemonUrl = GetInstalledDaemonUrl(_daemonPath);
 
         if (string.IsNullOrEmpty(currentIntalledDaemonUrl))
@@ -163,6 +253,7 @@ public class DaemonService
                 Console.WriteLine("New Haveno version found. Updating Haveno daemon...");
 
                 Directory.Delete(_daemonPath, true);
+                Directory.CreateDirectory(_daemonPath);
 
                 await FetchHaveno(_daemonPath, AppConstants.DaemonUrl);
 
@@ -285,6 +376,7 @@ public class DaemonService
                         "--useLocalhostForP2P=false " +
                         "--useDevPrivilegeKeys=false " +
                         "--nodePort=9999 " +
+                        $"--appDataDir={_dataPath} " +
                         $"--appName={AppConstants.HavenoAppName} " +
                         $"--apiPassword={password} " +
                         "--apiPort=3201 " +
