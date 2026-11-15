@@ -6,23 +6,19 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>preview</LangVersion>
+    <!-- Embed native libs in single-file publish, so only the executable needs de-quarantining on macOS -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Grpc.AspNetCore.Web" Version="2.70.0" />
-    <PackageReference Include="Knapcode.TorSharp" Version="2.15.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.4" />
     <PackageReference Include="QRCoder" Version="1.6.0" />
     <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="HiddenService\" />
-    <Folder Include="Tor\" />
-  </ItemGroup>
-
   <PropertyGroup>
-    <DaemonUrl>https://github.com/retoaccess1/haveno-reto/releases/tag/v1.8.0-reto</DaemonUrl>
+    <DaemonUrl>https://github.com/retoaccess1/haveno-reto/releases/tag/v1.13.0-reto</DaemonUrl>
     <Network>XMR_MAINNET</Network>
     <!-- Don't use the same name as the haveno desktop client! -->
     <HavenoAppName>haveno-reto-node</HavenoAppName>
